@@ -94,17 +94,30 @@ def tokenize_and_alingn_labels(ds, tokenize_col, tagging_cols = {}, max_length=2
     results['pad_mask'] = pad_mask
     return results
 
-def write_predict_to_file(tokens, metaphor_labels, novel_metaphors, frame_labels, out_file='predictions.csv',):
-        
+"""Version modified by Micah"""
+def write_predict_to_file(tokens, metaphor_labels, novel_metaphors, frame_labels, article_ids, sentence_ids, out_file='predictions.csv'):
     with open(out_file, 'w', encoding='utf-8') as f:
-        f.write('Tokens\tBorderline_metaphor\tReal_metaphors\tFrame_label\n')
-        for token, mls, novels, fls in zip(tokens, metaphor_labels, novel_metaphors, frame_labels):
-            for index_, (t, m, n, f_) in enumerate(zip(token, mls, novels, fls)):
-                line = f'{t}\t{m}\t{n}\t{frame_list[f_]}'
-                f.write(line+'\n')
+        f.write('Article\tSentence\tTokens\tBorderline_metaphor\tReal_metaphors\tFrame_label\n')
+        for token_list, mls, novels, fls, art_id, sent_id in zip(tokens, metaphor_labels, novel_metaphors, frame_labels, article_ids, sentence_ids):
+            for t, m, n, f_ in zip(token_list, mls, novels, fls):
+                line = f'{art_id}\t{sent_id}\t{t}\t{m}\t{n}\t{frame_list[f_]}'
+                f.write(line + '\n')
+
             f.write('\n')
     print(f'Save to conll file {out_file}.')
     return
+
+# def write_predict_to_file(tokens, metaphor_labels, novel_metaphors, frame_labels, out_file='predictions.csv',):
+#
+#     with open(out_file, 'w', encoding='utf-8') as f:
+#         f.write('Tokens\tBorderline_metaphor\tReal_metaphors\tFrame_label\n')
+#         for token, mls, novels, fls in zip(tokens, metaphor_labels, novel_metaphors, frame_labels):
+#             for index_, (t, m, n, f_) in enumerate(zip(token, mls, novels, fls)):
+#                 line = f'{t}\t{m}\t{n}\t{frame_list[f_]}'
+#                 f.write(line+'\n')
+#             f.write('\n')
+#     print(f'Save to conll file {out_file}.')
+#     return
 
 if __name__ == '__main__':
 
@@ -124,16 +137,35 @@ if __name__ == '__main__':
 
     # Load example article or articles (you can easily modify this to load multiple articles)
     with open(input_file, 'r', encoding='utf-8') as f:
-        example_article = json.load(f)['articles']
+        #example_article = json.load(f)['articles']
+        articles = json.load(f)['articles']
 
+    """Added by Micah"""
+    all_tokens = []
+    article_ids = []
+    sentence_ids = []
+    for art_idx, article in enumerate(articles):
+        sents = sent_tokenize(article)
+        for sent_idx, sent in enumerate(sents):
+            tokens = word_tokenize(sent)
+            all_tokens.append(tokens)
+            article_ids.append(art_idx)
+            sentence_ids.append(sent_idx)
+    # for article in articles:
+    #     sents = sent_tokenize(article)
+    #     sents = [word_tokenize(s) for s in sents]
+    #     all_tokens.extend(sents)
+    ds = datasets.Dataset.from_dict({"tokens": all_tokens, "article_id": article_ids, "sentence_id": sentence_ids})
+    ds = ds.map(tokenize_and_alingn_labels, fn_kwargs={'tokenize_col': 'tokens'})
+    """End added by Micah"""
     # First, we split the article into sentences.
-    sentences = sent_tokenize(example_article)
+    #sentences = sent_tokenize(example_article)
 
     # Then, we tokenize the sentences.
-    sentences = [word_tokenize(sent) for sent in sentences]
-    ds = datasets.Dataset.from_dict({'tokens': sentences})
+    #sentences = [word_tokenize(sent) for sent in sentences]
+    #ds = datasets.Dataset.from_dict({'tokens': sentences})
 
-    ds = ds.map(tokenize_and_alingn_labels, fn_kwargs={'tokenize_col': 'tokens'})
+    #ds = ds.map(tokenize_and_alingn_labels, fn_kwargs={'tokenize_col': 'tokens'})
 
     trainer = Trainer(
         model=metaphor_model,
@@ -184,4 +216,13 @@ if __name__ == '__main__':
         novels = np.where(np.array(metaphors) == 1, novels, 0)
         filtered_novels.append(novels)
 
-    write_predict_to_file(ds['tokens'], metaphor_predictions, filtered_novels, frame_predictions, out_file=prediction_output_file)
+    #write_predict_to_file(ds['tokens'], metaphor_predictions, filtered_novels, frame_predictions, out_file=prediction_output_file)
+    write_predict_to_file(
+        ds['tokens'],
+        metaphor_predictions,
+        filtered_novels,
+        frame_predictions,
+        ds['article_id'],
+        ds['sentence_id'],
+        out_file=prediction_output_file
+    )
